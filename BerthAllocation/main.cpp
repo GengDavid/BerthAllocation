@@ -131,12 +131,15 @@ int main() {
       ship[cnt] = new Ship(cnt,buffer[0],buffer[1],buffer[2]);
       cnt++;
     }
+
     Allocated* allo = new Allocated[cnt];
     int allo_cnt = 0, bad_allo = 0;
     greedy(allo, cnt, allo_cnt, bad_allo);
 
     int grade = evaluate(allo, allo_cnt, bad_allo);
 
+
+    /*writing result to files*/
     int out_cnt = 0;
     for (int i = 0; i < cnt; i++) {
       if (allo[out_cnt].id == i) {
