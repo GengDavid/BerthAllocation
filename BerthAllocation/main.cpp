@@ -3,6 +3,10 @@
 #include <sstream>
 #include <string>
 #include <cstring>
+#include <vector>
+#include <ctime>
+#include <algorithm>
+#include <functional>
 
 using std::ifstream;
 using std::ofstream;
@@ -10,7 +14,8 @@ using std::string;
 using std::stringstream;
 using std::cout;
 using std::endl;
-
+using std::vector;
+using std::lower_bound;
 class Ship {
 public:
   Ship() {}
@@ -24,6 +29,7 @@ public:
 }**ship;
 
 int n, m;
+
 
 struct Allocated {
   int leftx, lefty;
@@ -58,6 +64,173 @@ int evaluate(Allocated*& allo, int allo_cnt, int bad_allo) {
   cout << bad_allo << " " << ttwt << " " << last_departure_tm << endl;
   return bad_allo * 100 + ttwt * 10 + last_departure_tm * 10;
 }
+
+int* oc(int x, int y, int* prt1, int* prt2) {
+  int* subs = new int[n];
+  int cnt1 = 0, cnt2 = y + 1;
+  for (int i = x; i <= y; i++) {
+    subs[i] = prt1[i];
+  }
+  for (int i = 0; i<n; i++) {
+    int flag = 0;
+    for (int j = x; j <= y; j++) {
+      if (prt2[i] == prt1[j]) {
+        flag = 1;
+        break;
+      }
+    }
+    if (!flag) {
+      if (cnt1<x) {
+        subs[cnt1++] = prt2[i];
+      }
+      else subs[cnt2++] = prt2[i];
+    }
+  }
+  return subs;
+}
+
+struct Chromosome {
+  int *position;
+  int *tm;
+  int *order;
+  int fitness;
+};
+
+class Ga_engine {
+public:
+  void init(int n, int m, int num);
+  Chromosome roulette();
+  void ga(int n, int m, int num);
+  Ga_engine(int pop_size, int gen) :pop_size(pop_size), generation(gen) {}
+  void epoch(int num);
+private:
+  vector<Chromosome> cm_vec;
+  int pop_size;
+  int totfit;
+  int generation;
+};
+
+void Ga_engine::init(int n, int m, int num)
+{
+  for (int p = 0; p < pop_size; p++) {
+    Chromosome temp;
+    temp.order = new int[num];
+    for (int i = 0; i < num; i++) {
+      temp.order[i] = -1;
+    }
+    for (int i = 0; i < num; i++) {
+      int t = rand() % num;
+      int flag = 0;
+      for (int j = 0; j < i; j++) {
+        if (t == temp.order[j]) {
+          flag = 1;
+          break;
+        }
+      }
+      if (flag) {
+        i--;
+        continue;
+      }
+      temp.order[i] = t;
+    }
+    for (int i = 0; i < num; i++) {
+      cout << temp.order[i] << " ";
+    }
+    temp.position = new int[num];
+    for (int i = 0; i < num; i++) {
+      int t = rand() % n;
+      temp.position[i] = t;
+    }
+    temp.tm = new int[num];
+    for (int i = 0; i < num; i++) {
+      int t = rand() % m;
+      temp.tm[i] = t;
+    }
+    cm_vec.push_back(temp);
+  }
+}
+
+Chromosome Ga_engine::roulette()
+{
+  double part = rand()*1.0 / RAND_MAX;
+  part *= totfit;
+  Chromosome temp;
+  double select = 0;
+  for (int i = 0; i < pop_size; i++) {
+    select += cm_vec[i].fitness;
+    if (select >= part) {
+      temp = cm_vec[i];
+      break;
+    }
+  }
+  return temp;
+}
+
+Allocated* allo_with_cm(Chromosome cm, int& allo_cnt, int& bad_allo, int num) {
+  int* no = cm.order;
+  int* pos = cm.position;
+  int* tm = cm.tm;
+  Allocated* allo = new Allocated[num];
+  for (int i = 0; i < num; i++) {
+    int od = no[i];
+    int overlap = 0;
+    int lx = pos[od], ly = tm[od];
+    int rx = lx + ship[od]->berth_occupy;
+    int ry = ly + ship[od]->svc_tm;
+    if (ly<ship[i]->arv_tm || rx>n) {
+      bad_allo++;
+      continue;
+    }
+    judge(allo, allo_cnt, lx, ly, rx, ry, overlap);
+    if (overlap) {
+      bad_allo++;
+      continue;
+    }
+    else {
+      allo[allo_cnt].leftx = lx;
+      allo[allo_cnt].lefty = ly;
+      allo[allo_cnt].rightx = rx;
+      allo[allo_cnt].righty = ry;
+      allo[allo_cnt].id = ship[i]->id;
+      allo_cnt++;
+    }
+  }
+  return allo;
+}
+
+void Ga_engine::epoch(int num)
+{
+  vector<Chromosome> new_cm_vec;
+  while (new_cm_vec.size() < pop_size) {
+    Chromosome mum = roulette();
+    Chromosome dad = roulette();
+    Chromosome baby1, baby2;
+    int ok = 0, x, y;
+    while (!ok) {
+      x = rand() % num;
+      y = rand() % num;
+      if (x < y)ok = 1;
+    }
+    baby1.order = oc(x, y, mum.order, dad.order);
+    baby2.order = oc(x, y, dad.order, mum.order);
+  }
+}
+
+void Ga_engine::ga(int n, int m, int num) {
+  init(n, m, num);
+  for (int i = 0; i < generation; i++) {
+    for (int j = 0; j < pop_size; j++) {
+      int allo_cnt = 0, bad_allo = 0;
+      Chromosome temp_cm = cm_vec[j];
+      Allocated* temp_allo = allo_with_cm(temp_cm, allo_cnt, bad_allo, num);
+      cm_vec[i].fitness = evaluate(temp_allo, allo_cnt, bad_allo);
+    }
+    epoch(num);
+  }
+}
+
+
+
 
 void greedy(Allocated*& allo, int cnt, int& allo_cnt,int& bad_allo) {
   for (int s = 0; s < cnt; s++) {
@@ -135,7 +308,9 @@ int main() {
     Allocated* allo = new Allocated[cnt];
     int allo_cnt = 0, bad_allo = 0;
     greedy(allo, cnt, allo_cnt, bad_allo);
-
+    srand((unsigned)time(NULL));
+    Ga_engine gae(101,101);
+    gae.ga(n,m,num0fship);
     int grade = evaluate(allo, allo_cnt, bad_allo);
 
 
@@ -168,3 +343,4 @@ int main() {
   outfile.close();
   return 0;
 }
+
