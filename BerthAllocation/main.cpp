@@ -29,7 +29,7 @@ public:
 }**ship;
 
 int n, m;
-
+const int infinit = 0x7fffffff;
 
 struct Allocated {
   int leftx, lefty;
@@ -55,23 +55,53 @@ void judge(Allocated* allo,int allo_cnt, int lx, int ly, int rx, int ry, int &ov
   }
 }
 
+struct Chromosome {
+  int *position;
+  int *tm;
+  int *order;
+  int fitness;
+  Chromosome() :position(nullptr), tm(nullptr), order(nullptr), fitness(0) {}
+};
+
+class Ga_engine {
+public:
+  int * oc(int x, int y, int * prt1, int * prt2);
+  int* mutate(int * ori, int base);
+  void init(int n, int m, int num);
+  Chromosome roulette();
+  Allocated * allo_with_cm(Chromosome cm, int & allo_cnt, int & bad_allo);
+  Chromosome ga(int n, int m, int num);
+  Ga_engine(int pop_size, int gen) :pop_size(pop_size), generation(gen) {}
+  void epoch();
+  int bestfitness();
+private:
+  vector<Chromosome> cm_vec;
+  int pop_size;
+  int totfit;
+  int generation;
+  int ship_num;
+  int mutation_rate;
+  Chromosome best_cm;
+};
+
+
 int evaluate(Allocated*& allo, int allo_cnt, int bad_allo) {
   int ttwt = 0, last_departure_tm = -1;
   for (int i = 0; i < allo_cnt; i++) {
     ttwt += allo[i].lefty - ship[allo[i].id]->arv_tm;
     if (allo[i].righty + 1 > last_departure_tm)last_departure_tm = allo[i].righty + 1;
   }
-  cout << bad_allo << " " << ttwt << " " << last_departure_tm << endl;
+  //cout << bad_allo << " " << ttwt << " " << last_departure_tm << endl;
   return bad_allo * 100 + ttwt * 10 + last_departure_tm * 10;
 }
 
-int* oc(int x, int y, int* prt1, int* prt2) {
-  int* subs = new int[n];
+int* Ga_engine::oc(int x, int y, int* prt1, int* prt2) {
+  int* subs = new int[ship_num];
   int cnt1 = 0, cnt2 = y + 1;
   for (int i = x; i <= y; i++) {
     subs[i] = prt1[i];
   }
-  for (int i = 0; i<n; i++) {
+  for (int i = 0; i<ship_num; i++) {
     int flag = 0;
     for (int j = x; j <= y; j++) {
       if (prt2[i] == prt1[j]) {
@@ -89,26 +119,22 @@ int* oc(int x, int y, int* prt1, int* prt2) {
   return subs;
 }
 
-struct Chromosome {
-  int *position;
-  int *tm;
-  int *order;
-  int fitness;
-};
-
-class Ga_engine {
-public:
-  void init(int n, int m, int num);
-  Chromosome roulette();
-  void ga(int n, int m, int num);
-  Ga_engine(int pop_size, int gen) :pop_size(pop_size), generation(gen) {}
-  void epoch(int num);
-private:
-  vector<Chromosome> cm_vec;
-  int pop_size;
-  int totfit;
-  int generation;
-};
+int* Ga_engine::mutate(int *ori, int base) {
+  int* re = new int[base];
+  for (int i = 0; i < ship_num; i++) {
+    int rd = rand();
+    if (rd / RAND_MAX > mutation_rate) {
+      rd = rd%base;
+      rd = (int)(rd*0.5);
+      rd = (int)(rd - 0.5);
+      re[i] = ori[i] + rd;
+      if (re[i] > base)re[i] = base;
+      if (re[i] < 0)re[i] = 0;
+    }
+    else re[i] = ori[i];
+  }
+  return re;
+}
 
 void Ga_engine::init(int n, int m, int num)
 {
@@ -133,9 +159,6 @@ void Ga_engine::init(int n, int m, int num)
       }
       temp.order[i] = t;
     }
-    for (int i = 0; i < num; i++) {
-      cout << temp.order[i] << " ";
-    }
     temp.position = new int[num];
     for (int i = 0; i < num; i++) {
       int t = rand() % n;
@@ -148,6 +171,7 @@ void Ga_engine::init(int n, int m, int num)
     }
     cm_vec.push_back(temp);
   }
+  ship_num = num;
 }
 
 Chromosome Ga_engine::roulette()
@@ -166,12 +190,12 @@ Chromosome Ga_engine::roulette()
   return temp;
 }
 
-Allocated* allo_with_cm(Chromosome cm, int& allo_cnt, int& bad_allo, int num) {
+Allocated* Ga_engine::allo_with_cm(Chromosome cm, int& allo_cnt, int& bad_allo) {
   int* no = cm.order;
   int* pos = cm.position;
   int* tm = cm.tm;
-  Allocated* allo = new Allocated[num];
-  for (int i = 0; i < num; i++) {
+  Allocated* allo = new Allocated[ship_num];
+  for (int i = 0; i < ship_num; i++) {
     int od = no[i];
     int overlap = 0;
     int lx = pos[od], ly = tm[od];
@@ -198,39 +222,56 @@ Allocated* allo_with_cm(Chromosome cm, int& allo_cnt, int& bad_allo, int num) {
   return allo;
 }
 
-void Ga_engine::epoch(int num)
+void Ga_engine::epoch()
 {
   vector<Chromosome> new_cm_vec;
-  while (new_cm_vec.size() < pop_size) {
+  while ((int)new_cm_vec.size() < pop_size) {
     Chromosome mum = roulette();
     Chromosome dad = roulette();
     Chromosome baby1, baby2;
     int ok = 0, x, y;
     while (!ok) {
-      x = rand() % num;
-      y = rand() % num;
+      x = rand() % ship_num;
+      y = rand() % ship_num;
       if (x < y)ok = 1;
     }
     baby1.order = oc(x, y, mum.order, dad.order);
     baby2.order = oc(x, y, dad.order, mum.order);
+    baby1.position = mutate(mum.position,n);
+    baby2.position = mutate(dad.position,n);
+    baby1.tm = mutate(mum.tm,m);
+    baby2.tm = mutate(dad.tm,m);
+    new_cm_vec.push_back(baby1);
+    new_cm_vec.push_back(baby2);
   }
+  cm_vec = new_cm_vec;
 }
 
-void Ga_engine::ga(int n, int m, int num) {
+int Ga_engine::bestfitness() {
+  int best = infinit;
+  for (int i = 0; i < pop_size; i++) {
+    if (cm_vec[i].fitness < best) {
+      best = cm_vec[i].fitness;
+      best_cm = cm_vec[i];
+    }
+  }
+  return best;
+}
+
+Chromosome Ga_engine::ga(int n, int m, int num) {
   init(n, m, num);
   for (int i = 0; i < generation; i++) {
     for (int j = 0; j < pop_size; j++) {
       int allo_cnt = 0, bad_allo = 0;
       Chromosome temp_cm = cm_vec[j];
-      Allocated* temp_allo = allo_with_cm(temp_cm, allo_cnt, bad_allo, num);
+      Allocated* temp_allo = allo_with_cm(temp_cm, allo_cnt, bad_allo);
       cm_vec[i].fitness = evaluate(temp_allo, allo_cnt, bad_allo);
     }
-    epoch(num);
+    epoch();
+    if (bestfitness() < 200)break;
   }
+  return best_cm;
 }
-
-
-
 
 void greedy(Allocated*& allo, int cnt, int& allo_cnt,int& bad_allo) {
   for (int s = 0; s < cnt; s++) {
@@ -275,7 +316,7 @@ int main() {
     int com_flag = 0;
     int n_cnt = 0, m_cnt = 0;
     n = 0;  m = 0;
-    for (int i = 0; i < s.find_first_of(';'); i++) {
+    for (int i = 0; i < (int)s.find_first_of(';'); i++) {
       if (is_num(s[i])) {
         if (!com_flag) {
           n *= (int)pow(10, n_cnt);
@@ -295,7 +336,7 @@ int main() {
     int num0fship = (s.length() - s.find_first_of(';')) / 6;
     ship = new Ship*[num0fship];
     int buffer[3];
-    for (int i = s.find_first_of(';'); i < s.length() - 1; i = s.find_first_of(';',i + 1)) {
+    for (int i = s.find_first_of(';'); i < (int)s.length() - 1; i = s.find_first_of(';',i + 1)) {
       int bf_cnt = 0;
       for (int j = i + 1; bf_cnt < 3; j++) {
         if (s[j] == ',')continue;
@@ -307,10 +348,11 @@ int main() {
 
     Allocated* allo = new Allocated[cnt];
     int allo_cnt = 0, bad_allo = 0;
-    greedy(allo, cnt, allo_cnt, bad_allo);
+    //greedy(allo, cnt, allo_cnt, bad_allo);
     srand((unsigned)time(NULL));
-    Ga_engine gae(101,101);
-    gae.ga(n,m,num0fship);
+    Ga_engine gae(1001,1001);
+    Chromosome result = gae.ga(n,m,num0fship);
+    allo = gae.allo_with_cm(result, allo_cnt, bad_allo);
     int grade = evaluate(allo, allo_cnt, bad_allo);
 
 
